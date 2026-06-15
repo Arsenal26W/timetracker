@@ -188,7 +188,7 @@
     </div>
 </div>
 
-<div id="backdrop" class="backdrop" onclick="closeModals()"></div>
+<div id="backdrop" class="backdrop" onclick="closeTopSheet()"></div>
 
 <!-- 이벤트 입력 시트 -->
 <div id="sheet-event" class="sheet" style="padding:0 17px 30px;">
@@ -809,8 +809,10 @@ function saveMainCat(){
     mainCats.push({id,name,color,order:mainCats.length});
     // 기타 소분류 자동 생성
     subCats.push({id:Date.now()+1,mainId:id,name:'기타',order:999});
-    saveData();renderCategories();closeModals();
-    setTimeout(()=>openSheet('sheet-cat-list'),80);
+    saveData();renderCategories();
+    // 하위 시트만 닫고 cat-list 유지
+    const topId=sheetStack.pop();
+    document.getElementById(topId)?.classList.remove('open');
 }
 function deleteMainCat(id){
     if(!confirm('대분류와 해당 소분류 및 일정이 모두 삭제됩니다.'))return;
@@ -835,8 +837,9 @@ function saveSubCat(){
     if(name==='기타'){showToast('"기타"는 자동 생성됩니다');return;}
     const existing=subCats.filter(s=>s.mainId===mainId&&s.name!=='기타');
     subCats.push({id:Date.now(),mainId,name,order:existing.length});
-    saveData();renderCategories();closeModals();
-    setTimeout(()=>openSheet('sheet-cat-list'),80);
+    saveData();renderCategories();
+    const topId=sheetStack.pop();
+    document.getElementById(topId)?.classList.remove('open');
 }
 function deleteSubCat(id){
     const sub=subCats.find(s=>s.id===id);
@@ -939,11 +942,30 @@ function switchTab(tab,el){
     document.getElementById('tab-stats').style.display=tab==='stats'?'flex':'none';
     if(tab==='stats')renderStats();
 }
-function openSheet(id){document.getElementById(id).classList.add('open');document.getElementById('backdrop').classList.add('open');}
+// 열린 시트 스택
+const sheetStack = [];
+function openSheet(id){
+    if(!sheetStack.includes(id)) sheetStack.push(id);
+    document.getElementById(id).classList.add('open');
+    document.getElementById('backdrop').classList.add('open');
+}
+// 백드롭 탭: 최상위 시트만 닫기
+function closeTopSheet(){
+    if(!sheetStack.length){ closeModals(); return; }
+    const topId = sheetStack.pop();
+    document.getElementById(topId)?.classList.remove('open');
+    if(sheetStack.length === 0){
+        document.getElementById('backdrop').classList.remove('open');
+        catPanelOpen=false;
+        document.getElementById('cat-edit-btn').classList.remove('active');
+    }
+}
 function closeModals(){
+    sheetStack.length = 0;
     document.querySelectorAll('.sheet').forEach(s=>s.classList.remove('open'));
     document.getElementById('backdrop').classList.remove('open');
-    catPanelOpen=false;document.getElementById('cat-edit-btn').classList.remove('active');
+    catPanelOpen=false;
+    document.getElementById('cat-edit-btn').classList.remove('active');
 }
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2000);}
 function saveData(){
