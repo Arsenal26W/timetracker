@@ -77,11 +77,15 @@
             font-weight:700;font-size:13px;padding:9px 12px;border-radius:9px;cursor:pointer;text-align:left;width:100%;}
         /* 바텀 시트 */
         .backdrop{opacity:0;pointer-events:none;transition:opacity .28s;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:50;}
+        .backdrop.upper{background:rgba(0,0,0,.45);}
         .backdrop.open{opacity:1;pointer-events:auto;}
-        .sheet{transform:translateY(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);
+        .sheet{transform:translateY(100%);transition:transform .28s cubic-bezier(.4,0,.2,1),opacity .28s;
+            transform-origin:bottom center;
             position:fixed;bottom:0;left:0;right:0;background:var(--surface);z-index:60;
             border-radius:18px 18px 0 0;max-height:92vh;overflow-y:auto;box-shadow:0 -6px 28px rgba(0,0,0,.55);}
         .sheet.open{transform:translateY(0);}
+        /* 위에 다른 시트가 열렸을 때: 뒤로 물러난 듯 연해짐 */
+        .sheet.open.stacked{transform:translateY(-10px) scale(.94);opacity:.75;}
         .sheet-handle{width:32px;height:4px;background:var(--border2);border-radius:2px;margin:8px auto 2px;}
         /* 인풋 */
         select,textarea,input[type="text"]{background:#252525;border:1px solid var(--border2);color:var(--text);
@@ -100,6 +104,13 @@
         .cat-group-drag{color:var(--muted);font-size:14px;cursor:grab;padding:2px 5px;touch-action:none;flex-shrink:0;}
         .cat-sub-item{display:flex;align-items:center;gap:8px;padding:8px 13px 8px 32px;background:var(--surface);border-top:1px solid var(--border);}
         .cat-sub-drag{color:var(--muted);font-size:12px;cursor:grab;padding:2px 4px;touch-action:none;}
+        .cat-name-btn{flex:1;display:flex;align-items:center;gap:6px;background:none;border:none;padding:4px 6px;
+            margin:-4px 0;border-radius:7px;cursor:pointer;text-align:left;min-width:0;font-family:'Noto Sans KR',sans-serif;}
+        .cat-name-btn:active{background:rgba(255,255,255,.07);}
+        .cat-name-btn .cat-name-txt{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+        .cat-name-btn .cat-pencil{color:var(--muted);font-size:9px;opacity:.55;flex-shrink:0;}
+        .sheet-back{background:#252525;border:1px solid var(--border2);color:var(--text);width:30px;height:30px;
+            border-radius:9px;cursor:pointer;font-size:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
         .dragging-op{opacity:.3;}
         /* 집계 */
         .stat-period-btn{flex:1;padding:7px 0;font-size:12px;font-weight:700;border-radius:8px;color:var(--muted);background:none;border:none;cursor:pointer;}
@@ -258,7 +269,10 @@
 <!-- 대분류 추가 시트 -->
 <div id="sheet-add-main" class="sheet" style="padding:0 17px 30px;">
     <div class="sheet-handle"></div>
-    <h3 style="font-size:15px;font-weight:900;color:#fff;margin:5px 0 14px;">대분류 추가</h3>
+    <div style="display:flex;align-items:center;gap:9px;margin:5px 0 14px;">
+        <button onclick="closeTopSheet()" class="sheet-back" title="뒤로"><i class="fa-solid fa-chevron-left"></i></button>
+        <h3 id="sheet-add-main-title" style="font-size:15px;font-weight:900;color:#fff;margin:0;">대분류 추가</h3>
+    </div>
     <div style="display:flex;flex-direction:column;gap:13px;">
         <div>
             <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:5px;">이름</label>
@@ -269,14 +283,17 @@
             <div id="color-picker-main" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;justify-items:center;"></div>
             <input type="hidden" id="main-cat-color" value="#ef4444">
         </div>
-        <button onclick="saveMainCat()" class="btn-primary">추가하기</button>
+        <button id="btn-save-main" onclick="saveMainCat()" class="btn-primary">추가하기</button>
     </div>
 </div>
 
 <!-- 소분류 추가 시트 -->
 <div id="sheet-add-sub" class="sheet" style="padding:0 17px 30px;">
     <div class="sheet-handle"></div>
-    <h3 style="font-size:15px;font-weight:900;color:#fff;margin:5px 0 14px;">소분류 추가</h3>
+    <div style="display:flex;align-items:center;gap:9px;margin:5px 0 14px;">
+        <button onclick="closeTopSheet()" class="sheet-back" title="뒤로"><i class="fa-solid fa-chevron-left"></i></button>
+        <h3 id="sheet-add-sub-title" style="font-size:15px;font-weight:900;color:#fff;margin:0;">소분류 추가</h3>
+    </div>
     <div style="display:flex;flex-direction:column;gap:13px;">
         <div style="display:flex;gap:8px;">
             <div style="flex:1;">
@@ -288,7 +305,7 @@
                 <input type="text" id="sub-cat-name" placeholder="이름 입력">
             </div>
         </div>
-        <button onclick="saveSubCat()" class="btn-primary">추가하기</button>
+        <button id="btn-save-sub" onclick="saveSubCat()" class="btn-primary">추가하기</button>
     </div>
 </div>
 
@@ -341,6 +358,7 @@ let dragActive=false, dragStarted=false;
 let pendingMCGroupId=null, pendingMCDi=null, pendingMCSlot=null;
 let chartInst=null, compareChartInst=null;
 let catPanelOpen=false;
+let editingMainId=null, editingSubId=null;
 
 // ══════════════════════════════════
 // 날짜 유틸
@@ -717,7 +735,10 @@ function renderCategories(){
         hdr.innerHTML=`
             <span class="cat-group-drag" data-main-idx="${mIdx}"><i class="fa-solid fa-grip-lines"></i></span>
             <div style="width:13px;height:13px;border-radius:50%;background:${mc.color};flex-shrink:0;"></div>
-            <span style="flex:1;font-weight:900;font-size:13px;color:#fff;">${mc.name}</span>
+            <button class="cat-name-btn" onclick="openEditMain(${mc.id})" title="이름·색상 수정">
+                <span class="cat-name-txt" style="font-weight:900;font-size:13px;color:#fff;">${mc.name}</span>
+                <i class="fa-solid fa-pen cat-pencil"></i>
+            </button>
             <button onclick="deleteMainCat(${mc.id})" style="color:var(--red);background:none;border:none;cursor:pointer;padding:2px 6px;font-size:12px;"><i class="fa-solid fa-trash"></i></button>`;
         grp.appendChild(hdr);
         setupMainDrag(hdr.querySelector('.cat-group-drag'), mIdx);
@@ -728,7 +749,12 @@ function renderCategories(){
             si.innerHTML=`
                 ${!isKita?`<span class="cat-sub-drag"><i class="fa-solid fa-grip-lines"></i></span>`:'<span style="width:22px;flex-shrink:0;"></span>'}
                 <div style="width:8px;height:8px;border-radius:50%;background:${mc.color};flex-shrink:0;margin-right:2px;"></div>
-                <span style="flex:1;font-size:12px;font-weight:700;color:${isKita?'var(--muted)':'var(--text)'};">${sub.name}</span>
+                ${isKita
+                    ? `<span style="flex:1;font-size:12px;font-weight:700;color:var(--muted);">${sub.name}</span>`
+                    : `<button class="cat-name-btn" onclick="openEditSub(${sub.id})" title="이름 수정">
+                        <span class="cat-name-txt" style="font-size:12px;font-weight:700;color:var(--text);">${sub.name}</span>
+                        <i class="fa-solid fa-pen cat-pencil"></i>
+                       </button>`}
                 ${!isKita?`<button onclick="deleteSubCat(${sub.id})" style="color:var(--red);background:none;border:none;cursor:pointer;padding:2px 6px;font-size:11px;"><i class="fa-solid fa-trash"></i></button>`:''}`;
             if(!isKita)setupSubDrag(si.querySelector('.cat-sub-drag'),mc.id,sIdx);
             grp.appendChild(si);
@@ -787,13 +813,28 @@ function setupSubDrag(handle, mainId, origIdx){
     window.addEventListener('mouseup',e);
 }
 
-// 대분류 추가
-function openAddMain(){
-    document.getElementById('main-cat-name').value='';
-    document.getElementById('main-cat-color').value=PALETTE[0];
-    document.getElementById('color-picker-main').innerHTML=PALETTE.map((p,i)=>
-        `<button onclick="selectMainColor('${p}',this)" style="width:34px;height:34px;border-radius:50%;background:${p};border:3px solid ${i===0?'#fff':'transparent'};cursor:pointer;"></button>`
+// 대분류 추가 / 수정
+function renderMainColorPicker(selected){
+    document.getElementById('main-cat-color').value=selected;
+    document.getElementById('color-picker-main').innerHTML=PALETTE.map(p=>
+        `<button onclick="selectMainColor('${p}',this)" style="width:34px;height:34px;border-radius:50%;background:${p};border:3px solid ${p===selected?'#fff':'transparent'};cursor:pointer;"></button>`
     ).join('');
+}
+function openAddMain(){
+    editingMainId=null;
+    document.getElementById('sheet-add-main-title').textContent='대분류 추가';
+    document.getElementById('btn-save-main').textContent='추가하기';
+    document.getElementById('main-cat-name').value='';
+    renderMainColorPicker(PALETTE[0]);
+    openSheet('sheet-add-main');
+}
+function openEditMain(id){
+    const mc=mainCats.find(c=>c.id===id);if(!mc)return;
+    editingMainId=id;
+    document.getElementById('sheet-add-main-title').textContent='대분류 수정';
+    document.getElementById('btn-save-main').textContent='저장하기';
+    document.getElementById('main-cat-name').value=mc.name;
+    renderMainColorPicker(mc.color);
     openSheet('sheet-add-main');
 }
 function selectMainColor(color,btn){
@@ -805,14 +846,20 @@ function saveMainCat(){
     const name=document.getElementById('main-cat-name').value.trim();
     const color=document.getElementById('main-cat-color').value;
     if(!name){showToast('이름을 입력하세요');return;}
+    if(editingMainId){
+        const mc=mainCats.find(c=>c.id===editingMainId);
+        if(mc){mc.name=name;mc.color=color;}
+        editingMainId=null;
+        saveData();renderCategories();renderGrid();
+        closeTopSheet();showToast('수정 완료 ✓');
+        return;
+    }
     const id=Date.now();
     mainCats.push({id,name,color,order:mainCats.length});
     // 기타 소분류 자동 생성
     subCats.push({id:Date.now()+1,mainId:id,name:'기타',order:999});
     saveData();renderCategories();
-    // 하위 시트만 닫고 cat-list 유지
-    const topId=sheetStack.pop();
-    document.getElementById(topId)?.classList.remove('open');
+    closeTopSheet();   // 하위 시트만 닫고 카테고리 편집으로 복귀
 }
 function deleteMainCat(id){
     if(!confirm('대분류와 해당 소분류 및 일정이 모두 삭제됩니다.'))return;
@@ -823,11 +870,28 @@ function deleteMainCat(id){
     saveData();renderCategories();renderGrid();
 }
 
-// 소분류 추가
-function openAddSub(){
+// 소분류 추가 / 수정
+function fillSubParentSelect(selectedId){
     const sel=document.getElementById('sub-cat-parent');
-    sel.innerHTML=mainCats.sort((a,b)=>a.order-b.order).map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+    sel.innerHTML=mainCats.slice().sort((a,b)=>a.order-b.order)
+        .map(c=>`<option value="${c.id}"${c.id===selectedId?' selected':''}>${c.name}</option>`).join('');
+}
+function openAddSub(){
+    editingSubId=null;
+    document.getElementById('sheet-add-sub-title').textContent='소분류 추가';
+    document.getElementById('btn-save-sub').textContent='추가하기';
+    fillSubParentSelect(null);
     document.getElementById('sub-cat-name').value='';
+    openSheet('sheet-add-sub');
+}
+function openEditSub(id){
+    const sub=subCats.find(s=>s.id===id);if(!sub)return;
+    if(sub.name==='기타'){showToast('기타는 수정할 수 없습니다');return;}
+    editingSubId=id;
+    document.getElementById('sheet-add-sub-title').textContent='소분류 수정';
+    document.getElementById('btn-save-sub').textContent='저장하기';
+    fillSubParentSelect(sub.mainId);
+    document.getElementById('sub-cat-name').value=sub.name;
     openSheet('sheet-add-sub');
 }
 function saveSubCat(){
@@ -835,11 +899,26 @@ function saveSubCat(){
     const name=document.getElementById('sub-cat-name').value.trim();
     if(!name){showToast('이름을 입력하세요');return;}
     if(name==='기타'){showToast('"기타"는 자동 생성됩니다');return;}
+    if(editingSubId){
+        const sub=subCats.find(s=>s.id===editingSubId);
+        if(sub){
+            if(sub.mainId!==mainId){
+                // 대분류를 옮기면 해당 일정의 대분류도 함께 이동
+                sub.order=subCats.filter(s2=>s2.mainId===mainId&&s2.name!=='기타'&&s2.id!==sub.id).length;
+                sub.mainId=mainId;
+                events.forEach(e=>{if(e.subCatId===sub.id)e.mainCatId=mainId;});
+            }
+            sub.name=name;
+        }
+        editingSubId=null;
+        saveData();renderCategories();renderGrid();
+        closeTopSheet();showToast('수정 완료 ✓');
+        return;
+    }
     const existing=subCats.filter(s=>s.mainId===mainId&&s.name!=='기타');
     subCats.push({id:Date.now(),mainId,name,order:existing.length});
     saveData();renderCategories();
-    const topId=sheetStack.pop();
-    document.getElementById(topId)?.classList.remove('open');
+    closeTopSheet();
 }
 function deleteSubCat(id){
     const sub=subCats.find(s=>s.id===id);
@@ -942,28 +1021,69 @@ function switchTab(tab,el){
     document.getElementById('tab-stats').style.display=tab==='stats'?'flex':'none';
     if(tab==='stats')renderStats();
 }
-// 열린 시트 스택
+// 열린 시트 스택 — 아래 시트는 연해진 채로 남고, 그 위에 새 시트가 얹힘
 const sheetStack = [];
-function openSheet(id){
-    if(!sheetStack.includes(id)) sheetStack.push(id);
-    document.getElementById(id).classList.add('open');
-    document.getElementById('backdrop').classList.add('open');
+// 층마다 백드롭을 하나씩: 항상 "현재 시트 바로 아래"를 덮어서
+// 화면 어디를 눌러도 맨 위 시트만 닫히게 한다
+function getBackdrop(lvl){
+    if(lvl===0) return document.getElementById('backdrop');
+    let el=document.getElementById('backdrop-'+lvl);
+    if(!el){
+        el=document.createElement('div');
+        el.id='backdrop-'+lvl;
+        el.className='backdrop upper';
+        el.addEventListener('click',closeTopSheet);
+        document.body.appendChild(el);
+    }
+    el.style.zIndex = 50 + lvl*10;
+    return el;
 }
-// 백드롭 탭: 최상위 시트만 닫기
+function hideBackdrop(lvl){
+    const el = lvl===0 ? document.getElementById('backdrop') : document.getElementById('backdrop-'+lvl);
+    el?.classList.remove('open');
+}
+function openSheet(id){
+    const exist = sheetStack.indexOf(id);
+    if(exist >= 0){
+        // 이미 열려 있던 시트로 되돌아가기: 그 위의 시트는 모두 닫기
+        sheetStack.splice(exist+1).forEach((sid,i)=>{
+            document.getElementById(sid)?.classList.remove('open');
+            hideBackdrop(exist+1+i);
+        });
+    }else{
+        const cur = sheetStack[sheetStack.length-1];
+        if(cur) document.getElementById(cur)?.classList.add('stacked'); // 아래 시트는 연하게
+        sheetStack.push(id);
+    }
+    const lvl = sheetStack.length-1;
+    const el = document.getElementById(id);
+    el.style.zIndex = 60 + lvl*10;
+    el.classList.remove('stacked');
+    el.classList.add('open');
+    getBackdrop(lvl).classList.add('open');
+}
+// 백드롭 탭 / 뒤로: 최상위 시트만 닫고 이전 시트 복귀
 function closeTopSheet(){
     if(!sheetStack.length){ closeModals(); return; }
+    const lvl = sheetStack.length-1;
     const topId = sheetStack.pop();
     document.getElementById(topId)?.classList.remove('open');
-    if(sheetStack.length === 0){
-        document.getElementById('backdrop').classList.remove('open');
+    hideBackdrop(lvl);
+    if(topId==='sheet-add-main') editingMainId=null;
+    if(topId==='sheet-add-sub')  editingSubId=null;
+    const prevId = sheetStack[sheetStack.length-1];
+    if(prevId){
+        document.getElementById(prevId)?.classList.remove('stacked');
+    }else{
         catPanelOpen=false;
         document.getElementById('cat-edit-btn').classList.remove('active');
     }
 }
 function closeModals(){
     sheetStack.length = 0;
-    document.querySelectorAll('.sheet').forEach(s=>s.classList.remove('open'));
-    document.getElementById('backdrop').classList.remove('open');
+    editingMainId=null;editingSubId=null;
+    document.querySelectorAll('.sheet').forEach(s=>s.classList.remove('open','stacked'));
+    document.querySelectorAll('.backdrop').forEach(b=>b.classList.remove('open'));
     catPanelOpen=false;
     document.getElementById('cat-edit-btn').classList.remove('active');
 }
