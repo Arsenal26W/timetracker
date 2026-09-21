@@ -11,8 +11,57 @@
     <link rel="manifest" id="pwa-manifest">
     <script>
     (function(){
-        const m={name:"Time Tracker",short_name:"TimeTracker",start_url:location.href,scope:location.href,display:"fullscreen",orientation:"portrait",background_color:"#0f0f0f",theme_color:"#0f0f0f",icons:[{src:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='32' fill='%230f0f0f'/%3E%3Ctext x='96' y='130' font-size='110' text-anchor='middle'%3E🟢%3C/text%3E%3C/svg%3E",sizes:"192x192",type:"image/svg+xml",purpose:"any maskable"}]};
-        document.getElementById('pwa-manifest').href=URL.createObjectURL(new Blob([JSON.stringify(m)],{type:'application/json'}));
+        // 홈 화면 아이콘: 안드로이드는 SVG·이모지 아이콘을 거의 못 쓰므로
+        // 캔버스로 PNG를 직접 그려서 manifest / favicon / apple-touch-icon 에 모두 넣는다.
+        function makeIcon(size, opt){
+            opt = opt || {};
+            const c = document.createElement('canvas'); c.width = c.height = size;
+            const g = c.getContext('2d');
+            const r = opt.square ? 0 : Math.round(size*0.22);
+            g.fillStyle = '#0f0f0f';
+            g.beginPath();
+            if(r){
+                g.moveTo(r,0); g.lineTo(size-r,0); g.quadraticCurveTo(size,0,size,r);
+                g.lineTo(size,size-r); g.quadraticCurveTo(size,size,size-r,size);
+                g.lineTo(r,size); g.quadraticCurveTo(0,size,0,size-r);
+                g.lineTo(0,r); g.quadraticCurveTo(0,0,r,0);
+            } else { g.rect(0,0,size,size); }
+            g.closePath(); g.fill();
+            // 시계 모양 (maskable 은 잘림 대비해 더 작게)
+            const cx = size/2, cy = size/2, R = size*(opt.maskable ? 0.24 : 0.30);
+            g.lineCap = 'round';
+            g.strokeStyle = '#34d399'; g.lineWidth = Math.max(2, size*0.075);
+            g.beginPath(); g.arc(cx, cy, R, 0, Math.PI*2); g.stroke();
+            g.strokeStyle = '#ffffff'; g.lineWidth = Math.max(2, size*0.06);
+            g.beginPath(); g.moveTo(cx,cy); g.lineTo(cx, cy-R*0.55); g.stroke();
+            g.beginPath(); g.moveTo(cx,cy); g.lineTo(cx+R*0.42, cy+R*0.28); g.stroke();
+            return c.toDataURL('image/png');
+        }
+        let i192, i512, iMask, iApple;
+        try{
+            i192  = makeIcon(192);
+            i512  = makeIcon(512);
+            iMask = makeIcon(512,{square:true, maskable:true});
+            iApple= makeIcon(180,{square:true});
+        }catch(e){}
+        function addLink(rel, href, sizes){
+            if(!href) return;
+            const l = document.createElement('link'); l.rel = rel; l.href = href;
+            if(sizes) l.setAttribute('sizes', sizes);
+            document.head.appendChild(l);
+        }
+        // 북마크형 "홈 화면에 추가"는 이 아이콘들을 사용한다
+        addLink('icon', i192, '192x192');
+        addLink('apple-touch-icon', iApple, '180x180');
+        const icons = [];
+        if(i192)  icons.push({src:i192, sizes:'192x192', type:'image/png', purpose:'any'});
+        if(i512)  icons.push({src:i512, sizes:'512x512', type:'image/png', purpose:'any'});
+        if(iMask) icons.push({src:iMask, sizes:'512x512', type:'image/png', purpose:'maskable'});
+        const base = location.href.split('#')[0];
+        const m = {name:"Time Tracker", short_name:"TimeTracker", id:base, start_url:base, scope:base,
+            display:"fullscreen", orientation:"portrait", background_color:"#0f0f0f", theme_color:"#0f0f0f", icons:icons};
+        document.getElementById('pwa-manifest').href =
+            URL.createObjectURL(new Blob([JSON.stringify(m)],{type:'application/manifest+json'}));
     })();
     if('serviceWorker' in navigator){
         const s=`const C='tt-v2';self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>clients.claim());self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;e.respondWith(caches.open(C).then(c=>fetch(e.request).then(r=>{c.put(e.request,r.clone());return r;}).catch(()=>caches.match(e.request))));});`;
@@ -318,7 +367,8 @@
 const SLOT_H = 16;
 const TOTAL_SLOTS = 48;
 const DAY_KO = ['일','월','화','수','목','금','토'];
-const PALETTE = ['#ef4444','#f97316','#eab308','#84cc16','#22c55e','#14b8a6','#3b82f6','#8b5cf6','#ec4899','#6b7280'];
+// 색상: 빨강 → 핑크 순으로 색상환을 한 바퀴 돌며, 서로 확실히 구분되는 10색
+const PALETTE = ['#ef4444','#fb923c','#facc15','#84cc16','#22c55e','#14b8a6','#38bdf8','#6366f1','#a855f7','#ec4899'];
 
 // ══════════════════════════════════
 // 데이터 구조
@@ -329,8 +379,8 @@ const PALETTE = ['#ef4444','#f97316','#eab308','#84cc16','#22c55e','#14b8a6','#3
 function defaultData() {
     const m1=Date.now(), m2=m1+1, m3=m1+2;
     const mainCats=[
-        {id:m1,name:'업무/작업',color:'#3b82f6',order:0},
-        {id:m2,name:'개인공부',color:'#f97316',order:1},
+        {id:m1,name:'업무/작업',color:'#38bdf8',order:0},
+        {id:m2,name:'개인공부',color:'#fb923c',order:1},
         {id:m3,name:'수면/휴식',color:'#22c55e',order:2},
     ];
     const s=Date.now()+100;
@@ -816,7 +866,9 @@ function setupSubDrag(handle, mainId, origIdx){
 // 대분류 추가 / 수정
 function renderMainColorPicker(selected){
     document.getElementById('main-cat-color').value=selected;
-    document.getElementById('color-picker-main').innerHTML=PALETTE.map(p=>
+    // 기존 색이 현재 팔레트에 없으면(구버전 색) 맨 앞에 따로 보여준다
+    const list = PALETTE.includes(selected) ? PALETTE : [selected].concat(PALETTE);
+    document.getElementById('color-picker-main').innerHTML=list.map(p=>
         `<button onclick="selectMainColor('${p}',this)" style="width:34px;height:34px;border-radius:50%;background:${p};border:3px solid ${p===selected?'#fff':'transparent'};cursor:pointer;"></button>`
     ).join('');
 }
